@@ -54,11 +54,15 @@ app.use((req, res, next) => {
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/product');
 const categoryRoutes = require('./routes/categoryRoutes');
+const articleRoutes = require('./routes/articleRoutes');
 
 // Definisikan Routes
 app.use('/api/auth', authRoutes); // Untuk login dashboard
 app.use('/api/products', productRoutes); // Untuk produk
 app.use('/api/categories', categoryRoutes); // Untuk kategori
+// ---> TAMBAHKAN BARIS INI <---
+app.use('/api/articles', articleRoutes);
+
 
 // Route dasar
 app.get('/', (req, res) => {
