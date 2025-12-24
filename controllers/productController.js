@@ -41,6 +41,42 @@ const slugify = (text) => {
         .replace(/-+$/, '');
 };
 
+// --- HELPER FUNCTION: LEVENSHTEIN DISTANCE ---
+// Fungsi ini menghitung berapa banyak huruf yang harus diubah/hapus/tambah
+// agar kata A menjadi kata B. Semakin kecil angkanya, semakin mirip.
+function levenshteinDistance(a, b) {
+    if (!a || !b) return (a || b).length;
+    const matrix = [];
+    let i, j;
+
+    // Inisialisasi matriks
+    for (i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+    }
+    for (j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+    }
+
+    // Hitung jarak
+    for (i = 1; i <= b.length; i++) {
+        for (j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // substitution
+                    Math.min(
+                        matrix[i][j - 1] + 1, // insertion
+                        matrix[i - 1][j] + 1  // deletion
+                    )
+                );
+            }
+        }
+    }
+
+    return matrix[b.length][a.length];
+}
+
 
 // POST /api/products (Dashboard)
 exports.createProduct = async (req, res) => {
@@ -143,7 +179,7 @@ exports.createProduct = async (req, res) => {
 // GET /api/products/dashboard (Dashboard: Ambil semua produk)
 exports.getDashboardProducts = async (req, res) => {
     const db = req.db;
-    const { search, category } = req.query; // <--- Ambil parameter category
+    const { search, category } = req.query; 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
@@ -203,9 +239,53 @@ exports.getDashboardProducts = async (req, res) => {
             variants: typeof p.variants === 'string' ? JSON.parse(p.variants || '[]') : p.variants
         }));
 
+        // --- 5. LOGIKA SMART SUGGESTION (BARU) ---
+        let suggestion = null;
+
+        // Jalankan hanya jika: Hasil Kosong (0) DAN User sedang mencari (search ada isi)
+        if (parsedProducts.length === 0 && search) {
+            
+            // Ambil semua nama produk dari DB (ringan, cuma kolom name)
+            // Kita gunakan WHERE stock > 0 agar tidak menyarankan produk habis (opsional)
+            const [allNames] = await db.query("SELECT name FROM products");
+
+            let closestMatch = null;
+            let lowestDistance = Infinity;
+
+            // Loop setiap nama produk di DB
+            allNames.forEach(prod => {
+                // Pecah nama produk jadi kata-kata (misal: "Sprei Linen Hijau" -> ["Sprei", "Linen", "Hijau"])
+                const words = prod.name.split(' ');
+
+                words.forEach(word => {
+                    // Bersihkan simbol (titik, koma, dll)
+                    const cleanWord = word.replace(/[^a-zA-Z0-9]/g, '');
+                    
+                    // Hitung jarak kata kunci user vs kata di database
+                    const distance = levenshteinDistance(search.toLowerCase(), cleanWord.toLowerCase());
+
+                    // Kriteria Suggestion:
+                    // 1. Jarak < 3 (maksimal typo 2 huruf)
+                    // 2. Lebih dekat daripada match sebelumnya
+                    // 3. Panjang kata > 2 (biar tidak match kata pendek tak bermakna)
+                    if (distance < 3 && distance < lowestDistance && cleanWord.length > 2) {
+                        lowestDistance = distance;
+                        closestMatch = cleanWord;
+                    }
+                });
+            });
+
+            // Jika ketemu, format huruf kapital di awal
+            if (closestMatch) {
+                suggestion = closestMatch.charAt(0).toUpperCase() + closestMatch.slice(1).toLowerCase();
+            }
+        }
+        // ------------------------------------------
+
         res.json({
             status: "success",
             data: parsedProducts,
+            suggestion: suggestion, // <--- Kirim suggestion ke frontend
             pagination: {
                 currentPage: page,
                 itemsPerPage: limit,
@@ -222,24 +302,19 @@ exports.getDashboardProducts = async (req, res) => {
     }
 };
 
-
 // --- Helper untuk Web Utama (PUBLIK/UTAMA) ---
 
 // GET /api/products/public (Web Utama: Filter + Search + Pagination)
+// --- CONTROLLER UTAMA ---
 exports.getPublicProducts = async (req, res) => {
     const db = req.db;
-    // Ambil parameter category, search, page, limit
     const { search, category } = req.query; 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 12;
     const offset = (page - 1) * limit;
 
     try {
-        // 
-        
         // --- 1. Base Query dengan JOIN ---
-        // JOIN tabel categories (alias 'c') dengan products (alias 'p')
-        // Syarat dasar: stock > 0
         let baseQuery = `
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
@@ -248,21 +323,20 @@ exports.getPublicProducts = async (req, res) => {
         
         let queryParams = [];
 
-        // --- 2. Filter Search (AND ...) ---
+        // --- 2. Filter Search ---
         if (search) {
             baseQuery += ' AND (p.name LIKE ? OR p.description LIKE ?)';
             const keyword = `%${search}%`;
             queryParams.push(keyword, keyword);
         }
 
-        // --- 3. Filter Kategori (AND ...) ---
-        // Filter berdasarkan SLUG kategori (misal: ?category=celana-panjang)
+        // --- 3. Filter Kategori ---
         if (category) {
             baseQuery += ' AND c.slug = ?';
             queryParams.push(category);
         }
 
-        // --- 4. Hitung Total Data (Untuk Pagination) ---
+        // --- 4. Hitung Total Data ---
         const countQuery = `SELECT COUNT(*) as total ${baseQuery}`;
         const [countResult] = await db.query(countQuery, queryParams);
         
@@ -270,7 +344,6 @@ exports.getPublicProducts = async (req, res) => {
         const totalPages = Math.ceil(totalItems / limit);
 
         // --- 5. Ambil Data Produk ---
-        // Ambil data produk (p.*) dan info kategori (c.name, c.slug)
         const dataQuery = `
             SELECT p.id, p.name, p.description, p.price, p.stock, p.variants, 
                    p.banner_image, p.slug, p.meta_description, p.category_id,
@@ -289,9 +362,44 @@ exports.getPublicProducts = async (req, res) => {
             variants: typeof p.variants === 'string' ? JSON.parse(p.variants || '[]') : p.variants
         }));
 
+        // --- 6. LOGIKA FUZZY SEARCH / SUGGESTION (BARU) ---
+        let suggestion = null;
+
+        // Jalankan logika ini HANYA jika:
+        // 1. Hasil pencarian kosong (parsedProducts.length === 0)
+        // 2. User memang sedang mencari sesuatu (search ada isinya)
+        if (parsedProducts.length === 0 && search) {
+            
+            // Ambil SEMUA nama produk yang ada di database (hanya kolom nama agar ringan)
+            const [allNames] = await db.query("SELECT name FROM products WHERE stock > 0");
+
+            let closestMatch = null;
+            let lowestDistance = Infinity; // Mulai dengan angka tak terhingga
+
+            // Loop semua nama produk untuk dibandingkan
+            allNames.forEach(prod => {
+                // Bandingkan kata kunci (lowercase) dengan nama produk (lowercase)
+                const distance = levenshteinDistance(search.toLowerCase(), prod.name.toLowerCase());
+                
+                // Kriteria Suggestion:
+                // 1. Jarak < 4 (Maksimal salah 3 huruf, agar tidak terlalu ngawur)
+                // 2. Jarak lebih kecil dari kandidat sebelumnya (cari yang paling mirip)
+                if (distance < 4 && distance < lowestDistance) {
+                    lowestDistance = distance;
+                    closestMatch = prod.name;
+                }
+            });
+
+            if (closestMatch) {
+                suggestion = closestMatch;
+            }
+        }
+        // ----------------------------------------------------
+
         res.json({
             status: "success",
             data: parsedProducts,
+            suggestion: suggestion, // <--- Kirim suggestion ke frontend
             pagination: {
                 currentPage: page,
                 itemsPerPage: limit,
