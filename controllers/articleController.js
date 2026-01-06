@@ -146,6 +146,7 @@ exports.createArticle = async (req, res) => {
 
     const file = req.file; // Thumbnail Image
     const { title, excerpt, content, category_id, status, meta_title, meta_description } = req.body;
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
 
     // Validasi Sederhana
     if (!title) {
@@ -163,7 +164,7 @@ exports.createArticle = async (req, res) => {
         }
 
         // Proses Thumbnail URL
-        const thumbnailUrl = file ? `http://localhost:5000/uploads/${file.filename}` : null;
+        const thumbnailUrl = file ? `${baseUrl}/uploads/${file.filename}` : null;
 
         // Pastikan Content adalah string JSON yang valid sebelum disimpan
         // (Frontend akan kirim string JSON, atau object yg perlu di-stringify)
@@ -203,6 +204,7 @@ exports.updateArticle = async (req, res) => {
 
     const file = req.file; // Thumbnail Baru (jika ada)
     const { title, excerpt, content, category_id, status, meta_title, meta_description } = req.body;
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
 
     try {
         // Ambil data lama untuk hapus thumbnail lama jika diganti
@@ -216,7 +218,7 @@ exports.updateArticle = async (req, res) => {
         
         // Jika ada upload baru, update URL dan hapus file lama
         if (file) {
-            thumbnailUrl = `http://localhost:5000/uploads/${file.filename}`;
+            thumbnailUrl = `${baseUrl}/uploads/${file.filename}`;
             // Logic hapus file lama (opsional tapi disarankan)
             if (oldData[0].thumbnail) {
                 const oldFilename = oldData[0].thumbnail.split('/').pop();
@@ -282,11 +284,13 @@ exports.uploadContentImage = async (req, res) => {
         return res.status(400).json({ success: 0, message: "No image uploaded" });
     }
 
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+
     // Format return JSON ini adalah standar Editor.js
     res.json({
         success: 1,
         file: {
-            url: `http://localhost:5000/uploads/${req.file.filename}`,
+            url: `${baseUrl}/uploads/${req.file.filename}`,
             // optional: width, height, etc
         }
     });

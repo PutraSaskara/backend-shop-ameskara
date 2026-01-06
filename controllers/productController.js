@@ -96,6 +96,8 @@ exports.createProduct = async (req, res) => {
     const { 
         name, description, price, slug: inputSlug, meta_title, meta_description, category_id 
     } = req.body;
+
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
     
     // Logic slug generation
     let finalSlug = inputSlug;
@@ -131,7 +133,7 @@ exports.createProduct = async (req, res) => {
     finalVariants = variantsData.map(v => {
         const variant = { ...v };
         if (uploadedVariantFiles[fileIndex]) {
-            variant.image = `http://localhost:5000/uploads/${uploadedVariantFiles[fileIndex].filename}`; 
+            variant.image = `${baseUrl}/uploads/${uploadedVariantFiles[fileIndex].filename}`; 
             fileIndex++;
         } else {
             variant.image = null; 
@@ -149,7 +151,7 @@ exports.createProduct = async (req, res) => {
 
     let bannerImageUrl = null;
     if (uploadedBanner) {
-        bannerImageUrl = `http://localhost:5000/uploads/${uploadedBanner.filename}`;
+        bannerImageUrl = `${baseUrl}/uploads/${uploadedBanner.filename}`;
     }
 
     try {
@@ -501,6 +503,7 @@ exports.updateProduct = async (req, res) => {
         category_id // <--- Tambahkan ini
     } = req.body; 
     const db = req.db;
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
     
     const uploadedBanner = req.files.productBanner ? req.files.productBanner[0] : null;
     const uploadedVariantFiles = req.files.variantImages || [];
@@ -546,7 +549,7 @@ exports.updateProduct = async (req, res) => {
                     if (oldVariant && oldVariant.image) {
                         filesToDelete.push(oldVariant.image);
                     }
-                    variant.image = `http://localhost:5000/uploads/${newFile.filename}`;
+                    variant.image = `${baseUrl}/uploads/${newFile.filename}`;
                     fileIndex++; 
                 } else {
                     variant.image = (oldVariant && oldVariant.image) ? oldVariant.image : null; 
@@ -573,7 +576,7 @@ exports.updateProduct = async (req, res) => {
             if (oldBannerImage) {
                 filesToDelete.push(oldBannerImage);
             }
-            finalBannerImage = `http://localhost:5000/uploads/${uploadedBanner.filename}`;
+            finalBannerImage = `${baseUrl}/uploads/${uploadedBanner.filename}`;
         } else if (banner_image_url_keep === 'DELETE' || !banner_image_url_keep) {
              if (oldBannerImage) {
                 filesToDelete.push(oldBannerImage);
