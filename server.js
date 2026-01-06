@@ -10,7 +10,7 @@ const port = 5000;
 const app = express();
 // Konfigurasi CORS: Izinkan Next.js (Port 3000) untuk mengakses
 app.use(cors({
-    origin: 'http://localhost:3000', // <-- Hanya izinkan Next.js frontend Anda
+    origin: ['http://localhost:3001', 'http://localhost:3000'], // <-- Hanya izinkan Next.js frontend Anda
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true // Diperlukan jika Anda menggunakan cookies/session di masa depan
 }));
